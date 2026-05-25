@@ -44,6 +44,6 @@ impl Display {
     }
 
     pub fn clear(&mut self) {
-        self.buffer = [OFF; WIDTH * HEIGHT];
+        self.screen = [false; WIDTH * HEIGHT];
     }
 }

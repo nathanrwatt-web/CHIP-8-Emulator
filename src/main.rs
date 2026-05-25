@@ -30,15 +30,15 @@ fn main() -> io::Result<()> {
     let mut v2: u8 = 0;
     let mut v3: u8 = 0;
 
-    let mut pc: u16 = 0;  // program counter 
+    let mut pc: usize = 0;  // program counter, 16 but but usize for rust compliance 
     let mut i: u16 = 0;   // for memory accessing
 
-    let mut stack: Vec<u16> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
 
     // ROM processing 
-    let mut file_buffer = [0u8; 4096]; // 4kb memory
+    let mut memory = [0u8; 4096]; // 4kb memory
     let mut file = File::open("files/rom.test")?;
-    file.read_exact(&mut file_buffer)?;
+    file.read_exact(&mut memory)?;
 
 
     let mut display: Display = Display::new();
@@ -50,7 +50,13 @@ fn main() -> io::Result<()> {
 
 
     while !&display.should_close() {
-        pc = execute_instruction(0, &mut display, pc);
+        // fetch
+        // instructions are two bytes read as one
+        let instruction: u16 = (memory[pc] << 8) as u16 + (memory[pc + 1]) as u16;
+
+        // decode + execute 
+        pc = execute_instruction(instruction, &mut display, pc, &mut stack);
+
         display.draw();
     }
 
@@ -107,34 +113,47 @@ fn parse_op_code ( instruct: u16) -> Operation {
     }
 }
 
-pub fn execute_instruction( instruct: u16, display: &mut Display, pc: u16 ) -> u16 {
+pub fn execute_instruction( instruct: u16, display: &mut Display, pc: usize, stack: &mut Vec<usize>) -> usize {
 
     let op: Operation = parse_op_code(instruct);
 
     match op.head {
         0x0 => { 
+            // clear screen 0x00E0
             if op.tail == 0 && op.middle_2 == 0xE {
                clear_screen(display);
-               return pc + 1
+               return pc + 2;
             }
-            pc 
+            // pop from the stack 0x00EE
+            if op.tail == 0xE && op.middle_2 == 0xE {
+                if let Some(value) = stack.pop() {
+                    return value;
+                }
+            }
+            pc + 2
+             
         },
-        0x1 => { pc },
-        0x2 => { pc },
-        0x3 => { pc },
-        0x4 => { pc },
-        0x5 => { pc },
-        0x6 => { pc },
-        0x7 => { pc },
-        0x8 => { pc },
-        0x9 => { pc },
-        0xA => { pc },
-        0xB => { pc },
-        0xC => { pc },
-        0xD => { pc },
-        0xE => { pc },
-        0xF => { pc },
-        _ => { pc }
+        0x1 => {
+            ((op.middle_1 << 8) + (op.middle_2 << 4) + op.tail) as usize
+        },
+        0x2 => { 
+            stack.push(pc + 2);
+            ((op.middle_1 << 8) + (op.middle_2 << 4) + op.tail) as usize
+        },
+        0x3 => { pc + 2 },
+        0x4 => { pc + 2 },
+        0x5 => { pc + 2 },
+        0x6 => { pc + 2 },
+        0x7 => { pc + 2 },
+        0x8 => { pc + 2 },
+        0x9 => { pc + 2 },
+        0xA => { pc + 2 },
+        0xB => { pc + 2 },
+        0xC => { pc + 2 },
+        0xD => { pc + 2 },
+        0xE => { pc + 2 },
+        0xF => { pc + 2 },
+        _ => { pc + 2}
 
     }
 }
@@ -157,9 +176,9 @@ mod tests {
         assert_eq!(op.middle_1, 0x2);
         assert_eq!(op.middle_2, 0x3);
         assert_eq!(op.tail, 0x4);
-
-
     }
+
+
 }
 
 
