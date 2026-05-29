@@ -185,11 +185,80 @@ impl CPU {
                     registers.pc += 2;
                 }
             },
-            0x5 => {  },
-            0x6 => {  },
-            0x7 => {  },
-            0x8 => {  },
-            0x9 => { },
+            0x5 => {
+                // 0x5XY0 if VX == VY skip instruction 
+                if op.tail == 0 {
+                    let vx = registers.v[op.middle_1 as usize];
+                    let vy = registers.v[op.middle_2 as usize];
+
+                    if vx == vy {
+                        registers.pc += 4;
+                    } else {
+                        registers.pc += 2;
+                    }
+                }
+            },
+            0x6 => {
+                // 0x6XNN let VX = NN
+                let nn = (op.middle_2 << 4) + op.tail;
+                registers.v[op.middle_1 as usize] = nn;
+                registers.pc += 2;
+            },
+            0x7 => {
+                //0x7XNN add NN to VX
+                // important note: VF flag is not updated on overflow
+                let nn = (op.middle_2 << 4) + op.tail;
+                registers.v[op.middle_1 as usize] += nn;
+                registers.pc += 2;
+            },
+            0x8 => {
+                if op.tail == 0 {
+                    // 0x8XY0 VX = VY
+                    registers.v[op.middle_1 as usize] = registers.v[op.middle_2 as usize];
+                    registers.pc += 2;
+                } else if op.tail == 1 {
+                    // 0x8XY1 VX bitwise OR VY
+                    registers.v[op.middle_1 as usize] |= registers.v[op.middle_2 as usize];
+                    registers.pc += 2;
+                } else if op.tail == 2 {
+                    // 0x8XY2 VX bitwise AND VY
+                    registers.v[op.middle_1 as usize] &= registers.v[op.middle_2 as usize];
+                    registers.pc += 2;
+                } else if op.tail == 3 {
+                    // 0x8XY3 VX bitwise XOR VY
+                    registers.v[op.middle_1 as usize] ^= registers.v[op.middle_2 as usize];
+                    registers.pc += 2;
+                } else if op.tail == 4{
+                    // 0x8XY4 VX += VY
+                    // if overflow, set VF to flag 
+                    let vx = registers.v[op.middle_1 as usize];
+                    let vy = registers.v[op.middle_2 as usize];
+
+                    if 0xFF - vx < vy {
+                        registers.v[0x0F] = 0x1;
+                    } else {
+                        registers.v[0x0F] = 0x0;
+                    }
+
+                    registers.v[op.middle_1 as usize] = vy;
+                    registers.pc += 2;
+                }
+
+
+            },
+            0x9 => {
+                // 9XY0 if VX != VY skip instruction
+                if op.tail == 0 {
+                    let vx = registers.v[op.middle_1 as usize];
+                    let vy = registers.v[op.middle_2 as usize];
+
+                    if vx == vy {
+                        registers.pc += 4;
+                    } else {
+                        registers.pc += 2;
+                    }
+                }
+            },
             0xA => { },
             0xB => { },
             0xC => { },
