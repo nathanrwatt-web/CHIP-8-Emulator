@@ -24,23 +24,7 @@ const HEIGHT: usize = 32;
 
 fn main() -> io::Result<()> {
 
-    // registers
-    let mut v0: u8 = 0;
-    let mut v1: u8 = 0;
-    let mut v2: u8 = 0;
-    let mut v3: u8 = 0;
-
-    let mut pc: usize = 0;  // program counter, 16 but but usize for rust compliance 
-    let mut i: u16 = 0;   // for memory accessing
-
-    let mut stack: Vec<usize> = Vec::new();
-
-    // ROM processing 
-    let mut memory = [0u8; 4096]; // 4kb memory
-    let mut file = File::open("files/rom.test")?;
-    file.read_exact(&mut memory)?;
-
-
+    let mut cpu = CPU::new();
     let mut display: Display = Display::new();
 
     // test 
@@ -52,12 +36,12 @@ fn main() -> io::Result<()> {
     while !&display.should_close() {
         // fetch
         // instructions are two bytes read as one
-        let instruction: u16 = (memory[pc] << 8) as u16 + (memory[pc + 1]) as u16;
+        // let instruction: u16 = (memory[pc] << 8) as u16 + (memory[pc + 1]) as u16;
 
         // decode + execute 
-        pc = execute_instruction(instruction, &mut display, pc, &mut stack);
+        // pc = execute_instruction(instruction, &mut display, pc, &mut stack);
 
-        display.draw();
+        // display.draw();
     }
 
     Ok(())
@@ -102,65 +86,124 @@ struct Operation {
     middle_1: u8,
     middle_2: u8,
     tail: u8,
+}
+
+struct RegisterBank {
+    pub v: [u8; 16],    // General purpose 8-bit 
+    pub i: u16,         // index to memory 
+    pub pc: u16,        // program counter 
+    pub sp: u8,         // stack pointer 
+    pub dt: u8,         // delay timer 
+    pub st: u8,         // sound timer 
+}
+
+impl RegisterBank {
+    pub fn new() -> Self {
+        Self {
+            v: [0u8; 16],
+            i: 0,
+            pc: 0,
+            sp: 0,
+            dt: 0,
+            st: 0,
+        }
+    }
  }
 
-fn parse_op_code ( instruct: u16) -> Operation {
-    Operation {
-        head: (instruct >> 12) as u8,
-        middle_1: ((instruct >> 8) & 0x000F) as u8,
-        middle_2: ((instruct >> 4) & 0x000F) as u8 ,
-        tail: (instruct & 0x000F) as u8,
-    }
+struct CPU {
+    stack: [u16; 16],   // holds 16 bit addresses for function calls etc.
+    memory: [u8; 4096], // 4kb memory 
+    register_bank: RegisterBank,
 }
 
-pub fn execute_instruction( instruct: u16, display: &mut Display, pc: usize, stack: &mut Vec<usize>) -> usize {
+impl CPU {
+    pub fn new() -> Self {
+        Self {
+            stack: [0u16; 16],
+            memory: [0u8; 4096],
+            register_bank: RegisterBank::new(),
+        }
+    }
 
-    let op: Operation = parse_op_code(instruct);
+    pub fn fetch(&self) -> Operation {
+        let position = self.register_bank.pc;
+        let instruction = (self.memory[position as usize] << 8) + self.memory[(position + 1) as usize];
+        Operation {
+            head: (instruction >> 12),
+            middle_1: ((instruction >> 8) & 0x000F),
+            middle_2: ((instruction >> 4) & 0x000F) ,
+            tail: (instruction & 0x000F),
+        }
+    }
 
-    match op.head {
-        0x0 => { 
-            // clear screen 0x00E0
-            if op.tail == 0 && op.middle_2 == 0xE {
-               clear_screen(display);
-               return pc + 2;
-            }
-            // pop from the stack 0x00EE
-            if op.tail == 0xE && op.middle_2 == 0xE {
-                if let Some(value) = stack.pop() {
-                    return value;
+    pub fn execute_instruction(&mut self, op: Operation, display: &mut Display) {
+        let registers: &mut RegisterBank = &mut self.register_bank;
+        let stack = &mut self.stack;
+        match op.head {
+            0x0 => { 
+                // clear screen 0x00E0
+                if op.tail == 0 && op.middle_2 == 0xE {
+                   Self::clear_screen(display);
+                   registers.pc += 2;
+                   return;
                 }
-            }
-            pc + 2
-             
-        },
-        0x1 => {
-            ((op.middle_1 << 8) + (op.middle_2 << 4) + op.tail) as usize
-        },
-        0x2 => { 
-            stack.push(pc + 2);
-            ((op.middle_1 << 8) + (op.middle_2 << 4) + op.tail) as usize
-        },
-        0x3 => { pc + 2 },
-        0x4 => { pc + 2 },
-        0x5 => { pc + 2 },
-        0x6 => { pc + 2 },
-        0x7 => { pc + 2 },
-        0x8 => { pc + 2 },
-        0x9 => { pc + 2 },
-        0xA => { pc + 2 },
-        0xB => { pc + 2 },
-        0xC => { pc + 2 },
-        0xD => { pc + 2 },
-        0xE => { pc + 2 },
-        0xF => { pc + 2 },
-        _ => { pc + 2}
+                // pop from the stack 0x00EE
+                if op.tail == 0xE && op.middle_2 == 0xE {
+                    registers.pc = stack[registers.sp as usize];
+                    registers.sp -= 1;
+                }
+                 
+            },
+            0x1 => {
+                registers.pc = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
+            },
+            0x2 => { 
+                // push 
+                stack[(registers.sp + 2) as usize] = registers.pc;
+                // update stack pointer 
+                registers.sp += 2;
+                // update pc 
+                registers.pc = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
+            },
+            0x3 => { 
+                // 3XNN if VX = NN skip instruction
+                let vx = registers.v[op.middle_1 as usize];
+                let nn = (op.middle_2 << 4) + op.tail;
+                if vx == nn {
+                    registers.pc += 4;
+                } else {
+                    registers.pc += 2;
+                }
+            },
+            0x4 => {
+                // 4XNN if VX != NN skip instruction
+                let vx = registers.v[op.middle_1 as usize];
+                let nn = (op.middle_2 << 4) + op.tail;
+                if vx != nn {
+                    registers.pc += 4;
+                } else {
+                    registers.pc += 2;
+                }
+            },
+            0x5 => {  },
+            0x6 => {  },
+            0x7 => {  },
+            0x8 => {  },
+            0x9 => { },
+            0xA => { },
+            0xB => { },
+            0xC => { },
+            0xD => { },
+            0xE => { },
+            0xF => { },
+            _ => { }
 
+        }
     }
-}
 
-
-fn clear_screen( display: &mut Display) {
-    display.clear();
+    pub fn clear_screen( display: &mut Display) {
+        display.clear();
+    }
 }
 
 
