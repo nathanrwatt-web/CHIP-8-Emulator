@@ -127,12 +127,12 @@ impl CPU {
 
     pub fn fetch(&self) -> Operation {
         let position = self.register_bank.pc;
-        let instruction = (self.memory[position as usize] << 8) + self.memory[(position + 1) as usize];
+        let instruction = ((self.memory[position as usize] as u16) << 8) + self.memory[(position + 1) as usize] as u16;
         Operation {
-            head: (instruction >> 12),
-            middle_1: ((instruction >> 8) & 0x000F),
-            middle_2: ((instruction >> 4) & 0x000F) ,
-            tail: (instruction & 0x000F),
+            head: (instruction >> 12) as u8,
+            middle_1: ((instruction >> 8) & 0x000F) as u8,
+            middle_2: ((instruction >> 4) & 0x000F) as u8,
+            tail: (instruction & 0x000F) as u8,
         }
     }
 
@@ -233,18 +233,31 @@ impl CPU {
                     // if overflow, set VF to flag 
                     let vx = registers.v[op.middle_1 as usize];
                     let vy = registers.v[op.middle_2 as usize];
-
-                    if 0xFF - vx < vy {
-                        registers.v[0x0F] = 0x1;
-                    } else {
-                        registers.v[0x0F] = 0x0;
-                    }
-
-                    registers.v[op.middle_1 as usize] = vy;
+                    let (result, carry) = vx.overflowing_add(vy);
+                    registers.v[op.middle_1 as usize] = result;
+                    registers.v[0x0F] = carry as u8;
                     registers.pc += 2;
+                } else if op.tail == 5 {
+                    // 0x8XY5 VX = VX - VY
+                    let vx = registers.v[op.middle_1 as usize];
+                    let vy = registers.v[op.middle_2 as usize];
+                    let (result, carry) = vx.overflowing_sub(vy);
+                    registers.v[op.middle_1 as usize] = result;
+                    registers.v[0x0F] = carry as u8;
+                    registers.pc += 2;
+                } else if op.tail == 6 {
+                    // ambiguous TODO 
+                } else if op.tail == 7 {
+                    // 0x8XY7 VX = VY - VX
+                    let vx = registers.v[op.middle_1 as usize];
+                    let vy = registers.v[op.middle_2 as usize];
+                    let (result, carry) = vy.overflowing_sub(vx);
+                    registers.v[op.middle_1 as usize] = result;
+                    registers.v[0x0F] = carry as u8;
+                    registers.pc += 2;
+                } else if op.tail == 0xE {
+                    // ambiguous TODO 
                 }
-
-
             },
             0x9 => {
                 // 9XY0 if VX != VY skip instruction
@@ -259,10 +272,30 @@ impl CPU {
                     }
                 }
             },
-            0xA => { },
-            0xB => { },
-            0xC => { },
-            0xD => { },
+            0xA => {
+                // 0xANNN sets I = NNN
+                registers.i = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
+            },
+            0xB => {
+                // ambiguous TODO 
+            },
+            0xC => {
+                // 0xCXNN
+                // VX = generates random number then ands it with NN
+                // debating on using rand crate or not, could implement it using time dt or
+                // something
+            },
+            0xD => {
+                // 0xDXYN
+                // Draws an N pixel tall sprite from memorh index I 
+                // VX is x coord, VY is y coord. 
+                // -- quote from Tvil -- 
+                // All the pixels that are “on” in the sprite will flip the pixels
+                // on the screen that it is drawn to (from left to right,
+                // from most to least significant bit). If any pixels on the screen
+                // were turned “off” by this, the VF flag register is set to 1.
+                // Otherwise, it’s set to 0.
+            },
             0xE => { },
             0xF => { },
             _ => { }
@@ -282,7 +315,13 @@ mod tests {
 
     #[test]
     fn test_parser() {
-        let op: Operation = parse_op_code(0x1234);
+
+        let mut cpu = CPU::new();
+        cpu.memory[0] = 0x12;
+        cpu.memory[1] = 0x34;
+        cpu.register_bank.pc = 0;
+
+        let op = cpu.fetch();
 
         assert_eq!(op.head, 0x1);
         assert_eq!(op.middle_1, 0x2);
