@@ -139,6 +139,7 @@ impl CPU {
     pub fn execute_instruction(&mut self, op: Operation, display: &mut Display) {
         let registers: &mut RegisterBank = &mut self.register_bank;
         let stack = &mut self.stack;
+        let memory = &mut self.memory;
         match op.head {
             0x0 => { 
                 // clear screen 0x00E0
@@ -295,9 +296,33 @@ impl CPU {
                 // from most to least significant bit). If any pixels on the screen
                 // were turned “off” by this, the VF flag register is set to 1.
                 // Otherwise, it’s set to 0.
+                let x_coord = registers.v[op.middle_1 as usize] % 64;
+                let y_coord = registers.v[op.middle_2 as usize] % 32;
+                let n = op.tail as usize;
+
+                registers.v[0xF] = 0;
+
+                for row in 0..n {
+                    let sprite_row: u8 = memory[registers.i as usize + row];
+                    // for each bit in sprite_row, need to turn pixel on / off 
+                    // stop if botton row is reached 
+                    // TODO 
+                }
             },
-            0xE => { },
-            0xF => { },
+            0xE => {
+                if op.middle_2 == 0x9 && op.tail == 0xE {
+                    // 0xEX9E skip one instruction if key corresponding to VX value is pressed
+                    let key_pressed = registers.v[op.middle_1 as usize];
+                    // TODO 
+                } else if op.middle_2 == 0xA && op.tail == 0x1 {
+                    // 0xEXA1 skips if VX is not pressed
+                    let key_not_pressed = registers.v[op.middle_1 as usize];
+                    // TODO 
+                }
+            },
+            0xF => {
+
+            },
             _ => { }
 
         }
