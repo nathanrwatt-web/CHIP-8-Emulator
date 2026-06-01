@@ -120,7 +120,12 @@ impl CPU {
     pub fn new() -> Self {
         Self {
             stack: [0u16; 16],
-            memory: [0u8; 4096],
+            memory: [0u8; 4096], 
+            /*
+             * TODO 
+             * Implement initialization of memory 
+             * First ~512 bytes need to be sprites for font 
+            */
             register_bank: RegisterBank::new(),
         }
     }
@@ -321,10 +326,38 @@ impl CPU {
                 }
             },
             0xF => {
-
+                if op.middle_2 == 0x0 && op.tail == 0x7 {
+                    // 0xFX07 sets VX to DT 
+                    registers.v[op.middle_1 as usize] = registers.dt;
+                } else if op.middle_2 == 0x0 && op.tail == 0xA {
+                    // FX0A 
+                    // TODO 
+                    // Only increments PC if a certain key is pressed 
+                } else if op.middle_2 == 0x1 && op.tail == 0x5 {
+                    // 0xFX15 sets DT to VX
+                    registers.dt = registers.v[op.middle_1 as usize];
+                } else if op.middle_2 == 0x1 && op.tail == 0x8 {
+                    // 0xFX18 sets ST to VX 
+                    registers.st = registers.v[op.middle_1 as usize];
+                } else if op.middle_2 == 0x1 && op.tail == 0xE {
+                    // 0xFX1E register I += VX
+                    registers.i += registers.v[op.middle_1 as usize] as u16;
+                    // TODO implement overflow 
+                } else if op.middle_2 == 0x2 && op.tail == 0x9 {
+                    // 0xFX29 I = address of character in VX 
+                    // TODO 
+                } else if op.middle_2 == 0x3 && op.tail == 0x3 {
+                    // 0xFX33 
+                    // converts VX to 3 decimal digits, then stores these
+                    // contingously beginning at I 
+                    // TODO 
+                } else if op.middle_2 == 0x5 && op.tail == 0x5 {
+                    // TODO mem stuff
+                } else if op.middle_2 == 0x6 && op.tail == 0x5 {
+                    // TODO more mem stuff 
+                }
             },
             _ => { }
-
         }
     }
 
