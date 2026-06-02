@@ -309,6 +309,11 @@ impl CPU {
 
                 for row in 0..n {
                     let sprite_row: u8 = memory[registers.i as usize + row];
+
+                    for index in 0..8 {
+                        let bit = ((sprite_row << (0x7 - index)) & 0x1) == 1;
+                        if bit { display.flip_pixel(row, index) }
+                    }
                     // for each bit in sprite_row, need to turn pixel on / off 
                     // stop if botton row is reached 
                     // TODO 

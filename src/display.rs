@@ -46,4 +46,13 @@ impl Display {
     pub fn clear(&mut self) {
         self.screen = [false; WIDTH * HEIGHT];
     }
+
+    pub fn flip_pixel(&mut self, x_coord: usize, y_coord: usize) {
+        // y-coords is read from top left corner down 
+        self.screen[ y_coord * WIDTH + x_coord ] = 
+            match self.screen[ y_coord * WIDTH + x_coord] {
+            false => true,
+            true => false,
+        };
+    }
 }
