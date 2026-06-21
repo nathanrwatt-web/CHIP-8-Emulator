@@ -2,6 +2,7 @@ mod display;
 
 use display::Display;
 use std::{fs::File, io::{self, Read}};
+use rand::Rng;
 
 const WIDTH: usize = 64;
 const HEIGHT: usize = 32;
@@ -252,7 +253,10 @@ impl CPU {
                     registers.v[0x0F] = carry as u8;
                     registers.pc += 2;
                 } else if op.tail == 6 {
-                    // ambiguous TODO 
+                    // ambiguous, choosing 0x8XY6 := 
+                    // VX = VY >> 1
+                    registers.v[0x0F] = registers.v[op.middle_2 as usize] & 0x1; // VF = shift bit
+                    registers.v[op.middle_1 as usize] = registers.v[op.middle_2 as usize] >> 1;
                 } else if op.tail == 7 {
                     // 0x8XY7 VX = VY - VX
                     let vx = registers.v[op.middle_1 as usize];
@@ -262,7 +266,10 @@ impl CPU {
                     registers.v[0x0F] = carry as u8;
                     registers.pc += 2;
                 } else if op.tail == 0xE {
-                    // ambiguous TODO 
+                    // ambiguous, choosing 0x8XYE := 
+                    // VX = VY << 1 
+                    registers.v[0x0F] = registers.v[op.middle_2 as usize] & 0x8; // VF = shift bit 
+                    registers.v[op.middle_1 as usize] = registers.v[op.middle_2 as usize] << 1;
                 }
             },
             0x9 => {
@@ -283,13 +290,19 @@ impl CPU {
                 registers.i = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
             },
             0xB => {
-                // ambiguous TODO 
+                // ambiguous 
+                // choosing 0xBNN := 
+                // pc = V0 + NNN
+                let nnn: u16 = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
+                registers.pc = registers.v[0x0] as u16 + nnn;
             },
             0xC => {
                 // 0xCXNN
                 // VX = generates random number then ands it with NN
-                // debating on using rand crate or not, could implement it using time dt or
-                // something
+                let mut rng = rand::rng();
+                let rand: u32 = rng.next_u32(); 
+                let nn: u32 = ((op.middle_2 as u32) << 4) + op.tail as u32;
+                registers.v[op.middle_1 as usize] = (rand & nn) as u8;
             },
             0xD => {
                 // 0xDXYN
@@ -301,8 +314,8 @@ impl CPU {
                 // from most to least significant bit). If any pixels on the screen
                 // were turned “off” by this, the VF flag register is set to 1.
                 // Otherwise, it’s set to 0.
-                let x_coord = registers.v[op.middle_1 as usize] % 64;
-                let y_coord = registers.v[op.middle_2 as usize] % 32;
+                let x_coord = (registers.v[op.middle_1 as usize] % 64) as usize;
+                let y_coord = (registers.v[op.middle_2 as usize] % 32) as usize;
                 let n = op.tail as usize;
 
                 registers.v[0xF] = 0;
@@ -311,12 +324,9 @@ impl CPU {
                     let sprite_row: u8 = memory[registers.i as usize + row];
 
                     for index in 0..8 {
-                        let bit = ((sprite_row << (0x7 - index)) & 0x1) == 1;
-                        if bit { display.flip_pixel(row, index) }
+                        let bit = ((sprite_row >> (0x7 - index)) & 0x1) == 1;
+                        if bit { display.flip_pixel(x_coord + row, y_coord + index) }
                     }
-                    // for each bit in sprite_row, need to turn pixel on / off 
-                    // stop if botton row is reached 
-                    // TODO 
                 }
             },
             0xE => {
