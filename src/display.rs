@@ -55,4 +55,35 @@ impl Display {
             true => false,
         };
     }
+
+    pub fn is_key_down(&self, num: u8) -> bool {
+        self.window.is_key_down(num_to_key(num))
+    }
+}
+
+// key helper function
+// 0 1 2 3      1 2 3 4
+// 4 5 6 7      Q W E R 
+// 8 9 A B      A S D F 
+// C D E F      Z X C V
+fn num_to_key (num: u8) -> minifb::Key {
+    match num {
+        0x0 => minifb::Key::Key1,
+        0x1 => minifb::Key::Key2,
+        0x2 => minifb::Key::Key3,
+        0x3 => minifb::Key::Key4,
+        0x4 => minifb::Key::Q,
+        0x5 => minifb::Key::W,
+        0x6 => minifb::Key::E, 
+        0x7 => minifb::Key::R,
+        0x8 => minifb::Key::A,
+        0x9 => minifb::Key::S,
+        0xA => minifb::Key::D,
+        0xB => minifb::Key::F,
+        0xC => minifb::Key::Z,
+        0xD => minifb::Key::X,
+        0xE => minifb::Key::C,
+        0xF => minifb::Key::V,
+        _ => minifb::Key::V,   // should be unreachable 
+    }
 }

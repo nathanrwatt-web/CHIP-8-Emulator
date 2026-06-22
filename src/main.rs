@@ -81,6 +81,7 @@ fn main() -> io::Result<()> {
  * 
  */
 
+
 // smalled
 struct Operation {
     head: u8,
@@ -332,12 +333,14 @@ impl CPU {
             0xE => {
                 if op.middle_2 == 0x9 && op.tail == 0xE {
                     // 0xEX9E skip one instruction if key corresponding to VX value is pressed
-                    let key_pressed = registers.v[op.middle_1 as usize];
-                    // TODO 
+                    let key = registers.v[op.middle_1 as usize];
+                    if display.is_key_down(key) { registers.pc += 4; } 
+                    else { registers.pc += 2; }
                 } else if op.middle_2 == 0xA && op.tail == 0x1 {
                     // 0xEXA1 skips if VX is not pressed
-                    let key_not_pressed = registers.v[op.middle_1 as usize];
-                    // TODO 
+                    let key = registers.v[op.middle_1 as usize];
+                    if !display.is_key_down(key) { registers.pc += 4; }
+                    else { registers.pc += 2; }
                 }
             },
             0xF => {
