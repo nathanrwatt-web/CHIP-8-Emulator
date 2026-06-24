@@ -1,26 +1,10 @@
 mod display;
+mod font;
 
 use display::Display;
+use font::FONTS;
 use std::{fs::File, io::{self, Read}};
 use rand::Rng;
-
-const WIDTH: usize = 64;
-const HEIGHT: usize = 32;
-
-
-// basic idea // 
-
-/* Inititialize memory 
- * Inititialize stack 
- * Read in the ROM 
- *
- * while display is up
- * execute instruction
- *      parse instruction 
- *      call function
- *      increment PC (or change)
- * update display 
- */ 
 
 
 fn main() -> io::Result<()> {
@@ -28,31 +12,33 @@ fn main() -> io::Result<()> {
     let mut cpu = CPU::new();
     let mut display: Display = Display::new();
 
-    // test 
-    for i in 0..HEIGHT.min(WIDTH) {
-        display.screen[i * WIDTH + i] = true;
-    }
+    let start: u16 = 0x200; // start of loaded ROM file 
+    cpu.register_bank.pc = start;
+
+    // read in the rom file 
+    let mut rom = Vec::new();
+    File::open("files/test.rom")?.read_to_end(&mut rom)?;
+    cpu.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom);
 
 
     while !&display.should_close() {
         // fetch
         // instructions are two bytes read as one
         // let instruction: u16 = (memory[pc] << 8) as u16 + (memory[pc + 1]) as u16;
+        let fetched = cpu.fetch();
+        cpu.execute_instruction(fetched, &mut display);
+        display.draw();
 
-        // decode + execute 
-        // pc = execute_instruction(instruction, &mut display, pc, &mut stack);
-
-        // display.draw();
+        cpu.decrement_timers(); // beeping is not implemented
     }
 
     Ok(())
 }
 
-// === OP CODES ===
-// Reference to the different codes
-// registers will be referred to by X,Y ie Register X = VX
+// === SPECS ===
+// Registers will be referred to by X,Y ie Register X = VX
 //
-// there are 17 registers, a couple of which are special
+// There are 17 registers, a couple of which are special
 // V0 - VE are 8 bit general use registers
 // VF is a flag register 
 // I is and index fregister for storing memory addresses 
@@ -62,27 +48,6 @@ fn main() -> io::Result<()> {
 // PC is the program counter and it is 16 bits instead of 8
 // SP is the stack pounter, 8 bit
 
-// === Instructions ===
-/* 0NNN: Jumps to subroutine at NNN, deprecated instruction
- *
- * 00E0: Clear screen
- *
- * 1NNN: Set PC to NNN
- * 2NNN: Calls subroutine at NNN (keeps track of previous location to return)
- * 00EE: Pops last address on the stack and jumps there 
- * 3XNN: skips one instruction if VX = NN
- * 4XNN: skips one instruction if VX != NN
- * 5XY0: skips one instruction if VX = VY
- * 9XY0: skips one instruction if VX != VY
- *
- * 6XNN: sets VX to NN
- *
- * 7XNN: adds NN to VX
- * 
- */
-
-
-// smalled
 struct Operation {
     head: u8,
     middle_1: u8,
@@ -120,16 +85,20 @@ struct CPU {
 
 impl CPU {
     pub fn new() -> Self {
+        let mut memory = [0u8; 4096];
+        memory[..80].copy_from_slice(&FONTS);
         Self {
             stack: [0u16; 16],
-            memory: [0u8; 4096], 
-            /*
-             * TODO 
-             * Implement initialization of memory 
-             * First ~512 bytes need to be sprites for font 
-            */
+            memory,
             register_bank: RegisterBank::new(),
         }
+    }
+
+    pub fn decrement_timers(&mut self) {
+        self.register_bank.dt = self.register_bank.dt.saturating_sub(1);
+        self.register_bank.st = self.register_bank.st.saturating_sub(1);
+        // at this point if st was 0 the CHIP-8 would beep, but that is 
+        // not being implemented here 
     }
 
     pub fn fetch(&self) -> Operation {
@@ -258,6 +227,7 @@ impl CPU {
                     // VX = VY >> 1
                     registers.v[0x0F] = registers.v[op.middle_2 as usize] & 0x1; // VF = shift bit
                     registers.v[op.middle_1 as usize] = registers.v[op.middle_2 as usize] >> 1;
+                    registers.pc += 2;
                 } else if op.tail == 7 {
                     // 0x8XY7 VX = VY - VX
                     let vx = registers.v[op.middle_1 as usize];
@@ -269,8 +239,9 @@ impl CPU {
                 } else if op.tail == 0xE {
                     // ambiguous, choosing 0x8XYE := 
                     // VX = VY << 1 
-                    registers.v[0x0F] = registers.v[op.middle_2 as usize] & 0x8; // VF = shift bit 
+                    registers.v[0x0F] = registers.v[op.middle_2 as usize] >> 7; // VF = shift bit 
                     registers.v[op.middle_1 as usize] = registers.v[op.middle_2 as usize] << 1;
+                    registers.pc += 2;
                 }
             },
             0x9 => {
@@ -278,8 +249,7 @@ impl CPU {
                 if op.tail == 0 {
                     let vx = registers.v[op.middle_1 as usize];
                     let vy = registers.v[op.middle_2 as usize];
-
-                    if vx == vy {
+                    if vx != vy {
                         registers.pc += 4;
                     } else {
                         registers.pc += 2;
@@ -289,6 +259,7 @@ impl CPU {
             0xA => {
                 // 0xANNN sets I = NNN
                 registers.i = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
+                registers.pc += 2;
             },
             0xB => {
                 // ambiguous 
@@ -324,9 +295,12 @@ impl CPU {
                 for row in 0..n {
                     let sprite_row: u8 = memory[registers.i as usize + row];
 
-                    for index in 0..8 {
-                        let bit = ((sprite_row >> (0x7 - index)) & 0x1) == 1;
-                        if bit { display.flip_pixel(x_coord + row, y_coord + index) }
+                    for col in 0..8 {
+                        let bit = ((sprite_row >> (0x7 - col)) & 0x1) == 1;
+                        if bit {
+                            let on = display.flip_pixel(x_coord + col, y_coord + row);
+                            if !on { registers.v[0x0F] = 1; }
+                        }
                     }
                 }
             },
@@ -349,8 +323,11 @@ impl CPU {
                     registers.v[op.middle_1 as usize] = registers.dt;
                 } else if op.middle_2 == 0x0 && op.tail == 0xA {
                     // FX0A 
-                    // TODO 
-                    // Only increments PC if a certain key is pressed 
+                    // increments pc if a key ir pressed and stores that in vx
+                    if let Some(key_num) = display.get_pressed_key() {
+                            registers.v[op.middle_1 as usize] = key_num;
+                            registers.pc += 2;
+                    }
                 } else if op.middle_2 == 0x1 && op.tail == 0x5 {
                     // 0xFX15 sets DT to VX
                     registers.dt = registers.v[op.middle_1 as usize];
@@ -360,19 +337,38 @@ impl CPU {
                 } else if op.middle_2 == 0x1 && op.tail == 0xE {
                     // 0xFX1E register I += VX
                     registers.i += registers.v[op.middle_1 as usize] as u16;
-                    // TODO implement overflow 
+                    // TODO implement overflow ?? ambigous 
                 } else if op.middle_2 == 0x2 && op.tail == 0x9 {
                     // 0xFX29 I = address of character in VX 
-                    // TODO 
+                    // Since VX is in 0...F, and each sprite is 
+                    // 5 bytes, we know that the address of VX sprite
+                    // stored in VX * 5 since the first 80 bytes 
+                    // reserved for font sprites in this implementation 
+                    registers.i = registers.v[op.middle_1 as usize] as u16 * 5;
                 } else if op.middle_2 == 0x3 && op.tail == 0x3 {
                     // 0xFX33 
                     // converts VX to 3 decimal digits, then stores these
                     // contingously beginning at I 
-                    // TODO 
+                    let temp = registers.v[op.middle_1 as usize];
+                    let ones = temp % 10;
+                    let tens = (temp / 10) % 10;
+                    let hundreds = temp / 100;
+                    let index = registers.i as usize;
+                    memory[index] = hundreds;
+                    memory[index + 1] = tens;
+                    memory[index + 2] = ones;
                 } else if op.middle_2 == 0x5 && op.tail == 0x5 {
-                    // TODO mem stuff
+                    // 0xFX55 
+                    // Store V0 - VX in memory starting at I 
+                    let x = op.middle_1 as usize;
+                    let i = registers.i as usize;
+                    memory[i..=i + x].copy_from_slice(&registers.v[..=x]);
                 } else if op.middle_2 == 0x6 && op.tail == 0x5 {
-                    // TODO more mem stuff 
+                    // 0xFX65 
+                    // Load V0 - VX from memory starting at I 
+                    let x = op.middle_1 as usize;
+                    let i = registers.i as usize;
+                    registers.v[..=x].copy_from_slice(&memory[i..=i + x]);
                 }
             },
             _ => { }
@@ -404,8 +400,4 @@ mod tests {
         assert_eq!(op.middle_2, 0x3);
         assert_eq!(op.tail, 0x4);
     }
-
-
 }
-
-

@@ -46,18 +46,28 @@ impl Display {
     pub fn clear(&mut self) {
         self.screen = [false; WIDTH * HEIGHT];
     }
-
-    pub fn flip_pixel(&mut self, x_coord: usize, y_coord: usize) {
+    
+    // returns true if pixel turned on, false if off
+    pub fn flip_pixel(&mut self, x_coord: usize, y_coord: usize) -> bool {
         // y-coords is read from top left corner down 
         self.screen[ y_coord * WIDTH + x_coord ] = 
             match self.screen[ y_coord * WIDTH + x_coord] {
             false => true,
             true => false,
         };
+
+        match self.screen[ y_coord * WIDTH + x_coord] {
+            false => false,
+            true => true,
+        }
     }
 
     pub fn is_key_down(&self, num: u8) -> bool {
         self.window.is_key_down(num_to_key(num))
+    }
+
+    pub fn get_pressed_key(&self) -> Option<u8> {
+        key_to_num(&self.window)
     }
 }
 
@@ -85,5 +95,30 @@ fn num_to_key (num: u8) -> minifb::Key {
         0xE => minifb::Key::C,
         0xF => minifb::Key::V,
         _ => minifb::Key::V,   // should be unreachable 
+    }
+}
+
+fn key_to_num(window: &minifb::Window) -> Option<u8> {
+    match window.get_keys().first() {
+        Some(key) => match key {
+            minifb::Key::Key1 => Some(0x0),
+            minifb::Key::Key2 => Some(0x1),
+            minifb::Key::Key3 => Some(0x2),
+            minifb::Key::Key4 => Some(0x3),
+            minifb::Key::Q    => Some(0x4),
+            minifb::Key::W    => Some(0x5),
+            minifb::Key::E    => Some(0x6),
+            minifb::Key::R    => Some(0x7),
+            minifb::Key::A    => Some(0x8),
+            minifb::Key::S    => Some(0x9),
+            minifb::Key::D    => Some(0xA),
+            minifb::Key::F    => Some(0xB),
+            minifb::Key::Z    => Some(0xC),
+            minifb::Key::X    => Some(0xD),
+            minifb::Key::C    => Some(0xE),
+            minifb::Key::V    => Some(0xF),
+            _                 => None,
+        },
+        None => None,
     }
 }
