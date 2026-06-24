@@ -29,7 +29,6 @@ impl Display {
         }
     }
 
-    // takes a display of bools (or bits ?) and updates the buffer which is drawn to the screen
     pub fn draw(&mut self) {
         for (pixel, &on) in self.buffer.iter_mut().zip(self.screen.iter()) {
             *pixel = if on { ON } else { OFF };
@@ -47,10 +46,9 @@ impl Display {
         self.screen = [false; WIDTH * HEIGHT];
     }
     
-    // returns true if pixel turned on, false if off
+    // returns true if pixel turned on, false if turned off
     pub fn flip_pixel(&mut self, x_coord: usize, y_coord: usize) -> bool {
-        // y-coords is read from top left corner down 
-        self.screen[ y_coord * WIDTH + x_coord ] = 
+        self.screen[ y_coord * WIDTH + x_coord ] =
             match self.screen[ y_coord * WIDTH + x_coord] {
             false => true,
             true => false,
@@ -71,10 +69,9 @@ impl Display {
     }
 }
 
-// key helper function
 // 0 1 2 3      1 2 3 4
-// 4 5 6 7      Q W E R 
-// 8 9 A B      A S D F 
+// 4 5 6 7      Q W E R
+// 8 9 A B      A S D F
 // C D E F      Z X C V
 fn num_to_key (num: u8) -> minifb::Key {
     match num {
