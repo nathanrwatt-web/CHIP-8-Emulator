@@ -23,7 +23,7 @@ A CHIP-8 emulator written in Rust. A learning project meant to strengthen my kno
 
 1. **`stack`** — an array of `u16`s of length 16, strictly for function calls and return values
 2. **`memory`** — an array of `u8`s of length 4096. `CPU::new()` initializes the first 80 bytes with font sprites. Only bytes past `0x1FF` are used for the program, mimicking the fact that in the original CHIP-8 the first 512 bytes were reserved for the interpreter.
-3. **`register_bank`** — contains 17 registers:
+3. **`register_bank`** — contains 21 registers:
 
 | Register | Description |
 |----------|-------------|
