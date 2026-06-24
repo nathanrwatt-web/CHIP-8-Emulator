@@ -18,20 +18,15 @@ fn main() -> io::Result<()> {
     // read in the rom file 
     let mut rom = Vec::new();
     File::open("files/test.rom")?.read_to_end(&mut rom)?;
-    cpu.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom);
-
+    // load in only what will fit beginning at 0x200
+    cpu.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom[..4096 - 0x200]);
 
     while !&display.should_close() {
-        // fetch
-        // instructions are two bytes read as one
-        // let instruction: u16 = (memory[pc] << 8) as u16 + (memory[pc + 1]) as u16;
-        let fetched = cpu.fetch();
-        cpu.execute_instruction(fetched, &mut display);
-        display.draw();
-
-        cpu.decrement_timers(); // beeping is not implemented
+        let fetched = cpu.fetch(); // fetch the next instruction 
+        cpu.execute_instruction(fetched, &mut display); // decode + execute it 
+        display.draw(); // update the screen 
+        cpu.decrement_timers(); // update the time, beeping is NOT implemented
     }
-
     Ok(())
 }
 
@@ -77,6 +72,7 @@ impl RegisterBank {
     }
  }
 
+#[allow(clippy::upper_case_acronyms)]
 struct CPU {
     stack: [u16; 16],   // holds 16 bit addresses for function calls etc.
     memory: [u8; 4096], // 4kb memory 
