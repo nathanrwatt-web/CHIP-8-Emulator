@@ -268,11 +268,13 @@ impl CPU {
                 let n = op.tail as usize;
 
                 registers.v[0xF] = 0;
-
+                
                 for row in 0..n {
+                    if y_coord + row >= 32 { break; } // only the start position wraps 
                     let sprite_row: u8 = memory[registers.i as usize + row];
 
                     for col in 0..8 {
+                        if x_coord + col >= 64 { break; }
                         let bit = ((sprite_row >> (0x7 - col)) & 0x1) == 1;
                         if bit {
                             let on = display.flip_pixel(x_coord + col, y_coord + row);

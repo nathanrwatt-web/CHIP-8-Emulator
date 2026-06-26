@@ -50,7 +50,7 @@ impl Display {
     }
 
     pub fn should_close(&self) -> bool {
-        self.window.as_ref().map_or(true, |w| !w.is_open() || w.is_key_down(Key::Escape))
+        self.window.as_ref().is_none_or(|w| !w.is_open() || w.is_key_down(Key::Escape))
     }
 
     pub fn clear(&mut self) {
@@ -80,10 +80,10 @@ impl Display {
     }
 }
 
-// 0 1 2 3      1 2 3 4
-// 4 5 6 7      Q W E R
-// 8 9 A B      A S D F
-// C D E F      Z X C V
+// 1 2 3 C      1 2 3 4
+// 4 5 6 D      Q W E R
+// 7 8 9 E      A S D F
+// A 0 B F      Z X C V
 fn num_to_key (num: u8) -> minifb::Key {
     match num {
         0x0 => minifb::Key::Key1,
