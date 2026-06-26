@@ -1,6 +1,6 @@
 # CHIP-8 Emulator
 
-A CHIP-8 emulator written in Rust. A learning project meant to strengthen my knowledge of the fetch-decode-execute loop. This implementation follows [Tobias V. I. Langhoff's blog](https://tobiasvl.github.io/blog/write-a-chip-8-emulator).
+A CHIP-8 emulator written in Rust. A learning project meant to strengthen my knowledge of the fetch-decode-execute loop. This implementation follows [Tobias V. I. Langhoff's blog](https://tobiasvl.github.io/blog/write-a-chip-8-emulator). To use it for yourself, make sure to have rustc installed and clone the repo. In the root of project, run "cargo run -- files/" to try the IBM logo or a test game from [kripod](https://github.com/kripod/chip8-roms).
 
 ---
 
@@ -12,6 +12,7 @@ A CHIP-8 emulator written in Rust. A learning project meant to strengthen my kno
 | Display | 64 x 32 pixels scaled up by ~16x |
 | Stack | Variable size |
 | Registers | All original (`V0`-`VF`, `I`, `PC`, `DT`, `ST`) |
+| ~60 Hz frame rate | ~600 Hz instruction rate |
 
 ---
 
