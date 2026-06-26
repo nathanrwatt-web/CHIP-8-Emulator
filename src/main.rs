@@ -4,7 +4,8 @@ mod font;
 use display::Display;
 use font::FONTS;
 use clap::Parser;
-use std::{fs::File, io::{self, Read}, path::PathBuf};
+use std::{fs::File, io::{self, Read}, path::PathBuf, thread};
+use std::time::{Duration, Instant};
 use rand::Rng;
 
 
@@ -12,6 +13,9 @@ use rand::Rng;
 #[command(about = "CHIP-8 emulator")]
 struct Cli { rom: PathBuf, } // path to < 4096 - 0x200 byte ROM 
 
+const INTRUCTIONS_PER_FRAME: u32 = 10;
+const FRAME_DURATION: Duration = Duration::from_nanos(16666666); // ~60 Hz
+                                                                 //
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     let path = &cli.rom;
@@ -34,10 +38,21 @@ fn main() -> io::Result<()> {
     cpu.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom[..]);
 
     while !&display.should_close() {
-        let fetched = cpu.fetch();
-        cpu.execute_instruction(fetched, &mut display);
-        display.draw();
+        let frame_start = Instant::now();
+
+        for _ in 0..INTRUCTIONS_PER_FRAME {
+            let fetched = cpu.fetch();
+            cpu.execute_instruction(fetched, &mut display);
+        }
+
         cpu.decrement_timers();
+        display.draw();
+
+        let elapsed_time = frame_start.elapsed();
+        if let Some(remaining) = FRAME_DURATION.checked_sub(elapsed_time) {
+            thread::sleep(remaining);
+        }
+
     }
     Ok(())
 }
@@ -113,7 +128,7 @@ impl CPU {
         match op.head {
             0x0 => {
                 if op.tail == 0 && op.middle_2 == 0xE {
-                   Self::clear_screen(display);
+                   display.clear();
                    registers.pc += 2;
                    return;
                 }
@@ -127,8 +142,8 @@ impl CPU {
                 registers.pc = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
             },
             0x2 => {
-                stack[(registers.sp + 2) as usize] = registers.pc;
-                registers.sp += 2;
+                stack[(registers.sp + 1) as usize] = registers.pc + 2;
+                registers.sp += 1;
                 registers.pc = ((op.middle_1 as u16) << 8) + ((op.middle_2 as u16) << 4) + op.tail as u16;
             },
             0x3 => {
@@ -169,7 +184,7 @@ impl CPU {
             0x7 => {
                 // VF is not updated on overflow
                 let nn = (op.middle_2 << 4) + op.tail;
-                registers.v[op.middle_1 as usize] += nn;
+                registers.v[op.middle_1 as usize] = registers.v[op.middle_1 as usize].wrapping_add(nn);
                 registers.pc += 2;
             },
             0x8 => {
@@ -197,7 +212,7 @@ impl CPU {
                     let vy = registers.v[op.middle_2 as usize];
                     let (result, carry) = vx.overflowing_sub(vy);
                     registers.v[op.middle_1 as usize] = result;
-                    registers.v[0x0F] = carry as u8;
+                    registers.v[0x0F] = !carry as u8;
                     registers.pc += 2;
                 } else if op.tail == 6 {
                     // ambiguous, choosing 0x8XY6 := 
@@ -210,7 +225,7 @@ impl CPU {
                     let vy = registers.v[op.middle_2 as usize];
                     let (result, carry) = vy.overflowing_sub(vx);
                     registers.v[op.middle_1 as usize] = result;
-                    registers.v[0x0F] = carry as u8;
+                    registers.v[0x0F] = !carry as u8;
                     registers.pc += 2;
                 } else if op.tail == 0xE {
                     // ambiguous, choosing 0x8XYE := 
@@ -245,6 +260,7 @@ impl CPU {
                 let rand: u32 = rng.next_u32(); 
                 let nn: u32 = ((op.middle_2 as u32) << 4) + op.tail as u32;
                 registers.v[op.middle_1 as usize] = (rand & nn) as u8;
+                registers.pc += 2;
             },
             0xD => {
                 let x_coord = (registers.v[op.middle_1 as usize] % 64) as usize;
@@ -264,6 +280,7 @@ impl CPU {
                         }
                     }
                 }
+                registers.pc += 2;
             },
             0xE => {
                 if op.middle_2 == 0x9 && op.tail == 0xE {
@@ -283,14 +300,13 @@ impl CPU {
                     if let Some(key_num) = display.get_pressed_key() {
                         registers.v[op.middle_1 as usize] = key_num;
                         registers.pc += 2;
-                    }
+                    } else { return; }
                 } else if op.middle_2 == 0x1 && op.tail == 0x5 {
                     registers.dt = registers.v[op.middle_1 as usize];
                 } else if op.middle_2 == 0x1 && op.tail == 0x8 {
                     registers.st = registers.v[op.middle_1 as usize];
                 } else if op.middle_2 == 0x1 && op.tail == 0xE {
-                    // TODO: overflow behavior is ambiguous
-                    registers.i += registers.v[op.middle_1 as usize] as u16;
+                    registers.i = registers.i.wrapping_add(registers.v[op.middle_1 as usize] as u16);
                 } else if op.middle_2 == 0x2 && op.tail == 0x9 {
                     registers.i = registers.v[op.middle_1 as usize] as u16 * 5;
                 } else if op.middle_2 == 0x3 && op.tail == 0x3 {
@@ -311,13 +327,10 @@ impl CPU {
                     let i = registers.i as usize;
                     registers.v[..=x].copy_from_slice(&memory[i..=i + x]);
                 }
+                registers.pc += 2;
             },
             _ => { }
         }
-    }
-
-    pub fn clear_screen( display: &mut Display) {
-        display.clear();
     }
 }
 
@@ -328,7 +341,6 @@ mod tests {
 
     #[test]
     fn test_parser() {
-
         let mut cpu = CPU::new();
         cpu.memory[0] = 0x12;
         cpu.memory[1] = 0x34;
@@ -341,4 +353,6 @@ mod tests {
         assert_eq!(op.middle_2, 0x3);
         assert_eq!(op.tail, 0x4);
     }
+
+
 }
