@@ -95,3 +95,15 @@ A 0 B F   Z X C V
 | `FX33` | Store BCD of `VX` in `memory[I]`, `memory[I+1]`, `memory[I+2]` |
 | `FX55` | Store `V0`-`VX` in memory starting at `I` |
 | `FX65` | Load `V0`-`VX` from memory starting at `I` |
+
+## Design Decisions && Ambiguities
+
+CHIP-8's simplicity is perhaps what is so appealing about it as a self-contained project. The logic to emulate the 8-bit processor is essentially a singular match expression within a while loop, and decode and execute portions of a cycle become condensed into a singular action. That being said, CHIP-8 has been around since the 70's and has quite a few ambiguous instructions, as noted by Cowgood's technical reference. 
+
+The instructions 8XY6/8XYE are quite different depending on implementation. I chose the legacy imlpemenation in my project to be more faithful to the original, in which register VX is first set to the value stored in register VY then shifted by 1. In many modern implementations VX is simply shifted without the additional move from VY. 
+
+I again chose the older implementation in the spirit of beign faithful to the original CHIP-8 with instruction BNNN, in which the program counter is set to V0 + NNN. In the SUPER-CHIP instruction set, pc is set to VX + NN (BXNN) for more variable jump math, which seems familiar to me to the address math of machine assembly, a layer of abstraction above CHIP-8.
+
+As for the behavior of reading and writing to memory in the instructions FX55/FX65, I implemneted the modern instruction in which the index register I is left unchanged. This was primarily to preserve functionality with the majority of .rom games. 
+
+The pivotal instruction Draw (DXYN) I implemented in the following way: the start position of the sprite wraps, but the sprite itself clips on the edges. In this way a sprite which is drawn at the 64th index will be drawn at the left of the screen, but a sprite drawn at the 63rd index will be drawn at the very right but clipped beyond the first column of "pixels". "Pixels" is in quotes here since the pixels themselves are scaled by roughly 16x to preserve visibility on high resolution screens (really anything compared to what the CHIP-8 would have been running on). 
