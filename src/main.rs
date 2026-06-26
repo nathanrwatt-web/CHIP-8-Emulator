@@ -3,11 +3,26 @@ mod font;
 
 use display::Display;
 use font::FONTS;
-use std::{fs::File, io::{self, Read}};
+use clap::Parser;
+use std::{fs::File, io::{self, Read}, path::PathBuf};
 use rand::Rng;
 
 
+#[derive(Parser)]
+#[command(about = "CHIP-8 emulator")]
+struct Cli { rom: PathBuf, } // path to < 4096 - 0x200 byte ROM 
+
 fn main() -> io::Result<()> {
+    let cli = Cli::parse();
+    let path = &cli.rom;
+
+    let is_rom = path.extension().and_then(|e| e.to_str()) == Some("rom");
+    let size_ok = std::fs::metadata(path).map_or(false, |m| m.len() <= 3584);
+
+    if !is_rom || !size_ok {
+        eprintln!("Invalid file type or size: filepath must be to a .rom of size < 3.584 kb");
+        std::process::exit(1);
+    }
 
     let mut cpu = CPU::new();
     let mut display: Display = Display::new();
@@ -15,8 +30,8 @@ fn main() -> io::Result<()> {
     cpu.register_bank.pc = 0x200;
 
     let mut rom = Vec::new();
-    File::open("files/test.rom")?.read_to_end(&mut rom)?;
-    cpu.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom[..4096 - 0x200]);
+    File::open(path)?.read_to_end(&mut rom)?;
+    cpu.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom[..]);
 
     while !&display.should_close() {
         let fetched = cpu.fetch();
