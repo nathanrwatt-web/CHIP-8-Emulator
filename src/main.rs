@@ -21,7 +21,7 @@ fn main() -> io::Result<()> {
     let path = &cli.rom;
 
     let is_rom = path.extension().and_then(|e| e.to_str()) == Some("rom");
-    let size_ok = std::fs::metadata(path).map_or(false, |m| m.len() <= 3584);
+    let size_ok = std::fs::metadata(path).is_ok_and(|m| m.len() <= 3584);
 
     if !is_rom || !size_ok {
         eprintln!("Invalid file type or size: filepath must be to a .rom of size < 3.584 kb");
@@ -339,6 +339,14 @@ impl CPU {
 mod tests {
     use super::*;
 
+    fn run(cpu: &mut CPU, high: u8, low: u8) {
+        cpu.memory[cpu.register_bank.pc as usize] = high;
+        cpu.memory[cpu.register_bank.pc as usize + 1] = low;
+        let op = cpu.fetch();
+        let mut display = Display::headless();
+        cpu.execute_instruction(op, &mut display);
+    }
+
     #[test]
     fn test_parser() {
         let mut cpu = CPU::new();
@@ -354,5 +362,397 @@ mod tests {
         assert_eq!(op.tail, 0x4);
     }
 
+    #[test]
+    fn test_cls() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        let mut display = Display::headless();
+        display.screen[5] = true;
+        cpu.memory[0x200] = 0x00;
+        cpu.memory[0x201] = 0xE0;
+        let op = cpu.fetch();
+        cpu.execute_instruction(op, &mut display);
 
+        assert!(!display.screen[5]);
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_ret() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.sp = 1;
+        cpu.stack[1] = 0x345;
+        run(&mut cpu, 0x00, 0xEE);
+
+        assert_eq!(cpu.register_bank.pc, 0x345);
+        assert_eq!(cpu.register_bank.sp, 0);
+    }
+
+    #[test]
+    fn test_jump() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        run(&mut cpu, 0x12, 0x46);
+
+        assert_eq!(cpu.register_bank.pc, 0x246);
+    }
+
+    #[test]
+    fn test_call() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        run(&mut cpu, 0x23, 0x00);
+
+        assert_eq!(cpu.register_bank.sp, 1);
+        assert_eq!(cpu.stack[1], 0x202);
+        assert_eq!(cpu.register_bank.pc, 0x300);
+    }
+
+    #[test]
+    fn test_skip_eq_byte() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x42;
+        run(&mut cpu, 0x31, 0x42);
+
+        assert_eq!(cpu.register_bank.pc, 0x204);
+    }
+
+    #[test]
+    fn test_skip_eq_byte_no_skip() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x41;
+        run(&mut cpu, 0x31, 0x42);
+
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_skip_neq_byte() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x41;
+        run(&mut cpu, 0x41, 0x42);
+
+        assert_eq!(cpu.register_bank.pc, 0x204);
+    }
+
+    #[test]
+    fn test_skip_eq_reg() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x7;
+        cpu.register_bank.v[2] = 0x7;
+        run(&mut cpu, 0x51, 0x20);
+
+        assert_eq!(cpu.register_bank.pc, 0x204);
+    }
+
+    #[test]
+    fn test_set_byte() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        run(&mut cpu, 0x6A, 0x33);
+
+        assert_eq!(cpu.register_bank.v[0xA], 0x33);
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_add_byte_wrapping() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0xFF;
+        run(&mut cpu, 0x71, 0x02);
+
+        assert_eq!(cpu.register_bank.v[1], 0x01);
+        assert_eq!(cpu.register_bank.v[0xF], 0);
+    }
+
+    #[test]
+    fn test_set_reg() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[2] = 0x55;
+        run(&mut cpu, 0x81, 0x20);
+
+        assert_eq!(cpu.register_bank.v[1], 0x55);
+    }
+
+    #[test]
+    fn test_or() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x0F;
+        cpu.register_bank.v[2] = 0xF0;
+        run(&mut cpu, 0x81, 0x21);
+
+        assert_eq!(cpu.register_bank.v[1], 0xFF);
+    }
+
+    #[test]
+    fn test_and() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x0F;
+        cpu.register_bank.v[2] = 0xFC;
+        run(&mut cpu, 0x81, 0x22);
+
+        assert_eq!(cpu.register_bank.v[1], 0x0C);
+    }
+
+    #[test]
+    fn test_xor() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0xFF;
+        cpu.register_bank.v[2] = 0x0F;
+        run(&mut cpu, 0x81, 0x23);
+
+        assert_eq!(cpu.register_bank.v[1], 0xF0);
+    }
+
+    #[test]
+    fn test_add_reg_carry() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0xFF;
+        cpu.register_bank.v[2] = 0x02;
+        run(&mut cpu, 0x81, 0x24);
+
+        assert_eq!(cpu.register_bank.v[1], 0x01);
+        assert_eq!(cpu.register_bank.v[0xF], 1);
+    }
+
+    #[test]
+    fn test_sub_reg_borrow() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x01;
+        cpu.register_bank.v[2] = 0x02;
+        run(&mut cpu, 0x81, 0x25);
+
+        assert_eq!(cpu.register_bank.v[1], 0xFF);
+        assert_eq!(cpu.register_bank.v[0xF], 0);
+    }
+
+    #[test]
+    fn test_shr() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[2] = 0x05;
+        run(&mut cpu, 0x81, 0x26);
+
+        assert_eq!(cpu.register_bank.v[1], 0x02);
+        assert_eq!(cpu.register_bank.v[0xF], 1);
+    }
+
+    #[test]
+    fn test_subn() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x02;
+        cpu.register_bank.v[2] = 0x05;
+        run(&mut cpu, 0x81, 0x27);
+
+        assert_eq!(cpu.register_bank.v[1], 0x03);
+        assert_eq!(cpu.register_bank.v[0xF], 1);
+    }
+
+    #[test]
+    fn test_shl() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[2] = 0x81;
+        run(&mut cpu, 0x81, 0x2E);
+
+        assert_eq!(cpu.register_bank.v[1], 0x02);
+        assert_eq!(cpu.register_bank.v[0xF], 1);
+    }
+
+    #[test]
+    fn test_skip_neq_reg() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x1;
+        cpu.register_bank.v[2] = 0x2;
+        run(&mut cpu, 0x91, 0x20);
+
+        assert_eq!(cpu.register_bank.pc, 0x204);
+    }
+
+    #[test]
+    fn test_set_index() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        run(&mut cpu, 0xA2, 0x46);
+
+        assert_eq!(cpu.register_bank.i, 0x246);
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_jump_offset() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[0] = 0x10;
+        run(&mut cpu, 0xB2, 0x00);
+
+        assert_eq!(cpu.register_bank.pc, 0x210);
+    }
+
+    #[test]
+    fn test_random_masked_zero() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        run(&mut cpu, 0xC1, 0x00);
+
+        assert_eq!(cpu.register_bank.v[1], 0x00);
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_draw() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.i = 0x300;
+        cpu.memory[0x300] = 0x80;
+        cpu.register_bank.v[1] = 0;
+        cpu.register_bank.v[2] = 0;
+        let mut display = Display::headless();
+        cpu.memory[0x200] = 0xD1;
+        cpu.memory[0x201] = 0x21;
+        let op = cpu.fetch();
+        cpu.execute_instruction(op, &mut display);
+
+        assert!(display.screen[0]);
+        assert_eq!(cpu.register_bank.v[0xF], 0);
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_skip_key_pressed() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x5;
+        run(&mut cpu, 0xE1, 0x9E);
+
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_skip_key_not_pressed() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x5;
+        run(&mut cpu, 0xE1, 0xA1);
+
+        assert_eq!(cpu.register_bank.pc, 0x204);
+    }
+
+    #[test]
+    fn test_read_delay_timer() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.dt = 0x20;
+        run(&mut cpu, 0xF1, 0x07);
+
+        assert_eq!(cpu.register_bank.v[1], 0x20);
+        assert_eq!(cpu.register_bank.pc, 0x202);
+    }
+
+    #[test]
+    fn test_wait_key_no_press() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        run(&mut cpu, 0xF1, 0x0A);
+
+        assert_eq!(cpu.register_bank.pc, 0x200);
+    }
+
+    #[test]
+    fn test_set_delay_timer() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x30;
+        run(&mut cpu, 0xF1, 0x15);
+
+        assert_eq!(cpu.register_bank.dt, 0x30);
+    }
+
+    #[test]
+    fn test_set_sound_timer() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x40;
+        run(&mut cpu, 0xF1, 0x18);
+
+        assert_eq!(cpu.register_bank.st, 0x40);
+    }
+
+    #[test]
+    fn test_add_index() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.i = 0x10;
+        cpu.register_bank.v[1] = 0x05;
+        run(&mut cpu, 0xF1, 0x1E);
+
+        assert_eq!(cpu.register_bank.i, 0x15);
+    }
+
+    #[test]
+    fn test_font_address() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.v[1] = 0x3;
+        run(&mut cpu, 0xF1, 0x29);
+
+        assert_eq!(cpu.register_bank.i, 0x0F);
+    }
+
+    #[test]
+    fn test_bcd() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.i = 0x300;
+        cpu.register_bank.v[1] = 156;
+        run(&mut cpu, 0xF1, 0x33);
+
+        assert_eq!(cpu.memory[0x300], 1);
+        assert_eq!(cpu.memory[0x301], 5);
+        assert_eq!(cpu.memory[0x302], 6);
+    }
+
+    #[test]
+    fn test_store_registers() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.i = 0x300;
+        cpu.register_bank.v[0] = 0xA;
+        cpu.register_bank.v[1] = 0xB;
+        cpu.register_bank.v[2] = 0xC;
+        run(&mut cpu, 0xF2, 0x55);
+
+        assert_eq!(cpu.memory[0x300], 0xA);
+        assert_eq!(cpu.memory[0x301], 0xB);
+        assert_eq!(cpu.memory[0x302], 0xC);
+    }
+
+    #[test]
+    fn test_load_registers() {
+        let mut cpu = CPU::new();
+        cpu.register_bank.pc = 0x200;
+        cpu.register_bank.i = 0x300;
+        cpu.memory[0x300] = 0xA;
+        cpu.memory[0x301] = 0xB;
+        cpu.memory[0x302] = 0xC;
+        run(&mut cpu, 0xF2, 0x65);
+
+        assert_eq!(cpu.register_bank.v[0], 0xA);
+        assert_eq!(cpu.register_bank.v[1], 0xB);
+        assert_eq!(cpu.register_bank.v[2], 0xC);
+    }
 }
