@@ -7,7 +7,7 @@ const ON: u32 = 0x00FF_FFFF; // white
 const OFF: u32 = 0x0000_0000; // black 
 
 pub struct Display {
-    window: Window,
+    window: Option<Window>,
     buffer: [u32; WIDTH * HEIGHT],
     pub screen: [bool; WIDTH * HEIGHT],
 }
@@ -23,7 +23,16 @@ impl Display {
 
         new_window.set_target_fps(60);
         Self {
-            window: new_window,
+            window: Some(new_window),
+            buffer: [OFF; WIDTH * HEIGHT],
+            screen: [false; WIDTH * HEIGHT],
+        }
+    }
+
+    #[cfg(test)]
+    pub fn headless() -> Self {
+        Self {
+            window: None,
             buffer: [OFF; WIDTH * HEIGHT],
             screen: [false; WIDTH * HEIGHT],
         }
@@ -34,12 +43,14 @@ impl Display {
             *pixel = if on { ON } else { OFF };
         }
 
-        self.window.update_with_buffer(&self.buffer, WIDTH, HEIGHT)
-        .expect("failed to update buffer");
+        if let Some(window) = &mut self.window {
+            window.update_with_buffer(&self.buffer, WIDTH, HEIGHT)
+            .expect("failed to update buffer");
+        }
     }
 
     pub fn should_close(&self) -> bool {
-        !self.window.is_open() || self.window.is_key_down(Key::Escape)
+        self.window.as_ref().map_or(true, |w| !w.is_open() || w.is_key_down(Key::Escape))
     }
 
     pub fn clear(&mut self) {
@@ -61,11 +72,11 @@ impl Display {
     }
 
     pub fn is_key_down(&self, num: u8) -> bool {
-        self.window.is_key_down(num_to_key(num))
+        self.window.as_ref().is_some_and(|w| w.is_key_down(num_to_key(num)))
     }
 
     pub fn get_pressed_key(&self) -> Option<u8> {
-        key_to_num(&self.window)
+        self.window.as_ref().and_then(key_to_num)
     }
 }
 
